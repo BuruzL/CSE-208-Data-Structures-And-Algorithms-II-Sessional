@@ -19,26 +19,38 @@ int time(string t){
     return hour*60+minute;
 }
 
-bool dfs(int u, int sink,  vector<int> &parent, vector<int> &visited, vector<vector<int>> &capacity){
-    visited[u]=1;
-    if(u==sink)return true;
-    for(int v=0; v<capacity.size(); v++){
-        if(!visited[v] && capacity[u][v]>0){
-            parent[v]=u;
-            if(dfs(v,sink,parent, visited, capacity))
-            return true;
+bool bfs(int source, int sink,  vector<int> &parent, vector<vector<int>> &capacity){
+    int n=capacity.size();
+    vector<int> visited(n,0);
+
+    queue<int> q;
+    q.push(source);
+    visited[source]=1;
+    parent[source]=-1;
+
+    while(!q.empty()){
+        int u=q.front();
+        q.pop();
+
+        for(int v=0; v<n; v++){
+            if(!visited[v] && capacity[u][v]>0){
+                visited[v]=1;
+                parent[v]=u;
+                if(v==sink)return true;
+                q.push(v);
+            }
         }
     }
     return false;
 }
 
-int fordFulkerson(int source, int sink, vector<vector<int>> &capacity){
+int EdmondsKarp(int source, int sink, vector<vector<int>> &capacity){
     int n=capacity.size();
     int maxFlow=0;
     while(true){
         vector<int> parent(n,-1);
-        vector<int> visited(n,0);
-        if(!dfs(source, sink, parent, visited, capacity))break;
+        
+        if(!bfs(source, sink, parent, capacity))break;
         int pathFlow=INT_MAX;
         for(int v=sink; v!=source; v=parent[v]){
             int u=parent[v];
@@ -62,7 +74,7 @@ void routes(vector<Flights> &flights,  vector<vector<int>> &capOriginal){
     int sink=2*n+1;
     vector<vector<int>> capacity=capOriginal;
 
-    int matching=fordFulkerson(source, sink ,capacity);
+    int matching=EdmondsKarp(source, sink ,capacity);
 
     vector<int> next(n,-1);
     vector<int> previous(n,-1);
@@ -77,7 +89,7 @@ void routes(vector<Flights> &flights,  vector<vector<int>> &capOriginal){
        }
     }
 
-   cout<<"Number of Aircraft= "<<n-matching<<endl;
+   cout<<"Number of Aircraft: "<<n-matching<<endl;
 
    int ctr=1;
    for(int i=0; i<n; i++){
