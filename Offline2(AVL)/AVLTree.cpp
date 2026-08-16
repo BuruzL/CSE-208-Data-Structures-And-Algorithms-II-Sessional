@@ -1,324 +1,359 @@
-#include <algorithm>
-#include <chrono>
-#include <cstdint>
-#include <fstream>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-
+#include<iostream>
+#include<algorithm>
+#include<string>
+#include<vector>
+//time header
+#include<chrono>
+//file header
+#include<fstream>
+#include<sstream>
+#include<iostream>
 using namespace std;
 
-class AVLTree {
-private:
-    struct Node {
+class AVLTree{
+    private:
+    struct Node{
         int key;
         int height;
         Node* left;
         Node* right;
 
-        explicit Node(int k) : key(k), height(1), left(nullptr), right(nullptr) {}
+        Node(int k): key(k), height(1), left(nullptr), right(nullptr){} 
     };
 
-    Node* root = nullptr;
-
-    static int heightOf(Node* node) {
-        return node ? node->height : 0;
+    static Node* copyNode(Node* node) {
+    if (node == nullptr) {
+        return nullptr;
     }
 
-    static int balanceOf(Node* node) {
-        return node ? heightOf(node->left) - heightOf(node->right) : 0;
-    }
+    Node* newNode = new Node(node->key);
 
-    static void updateHeight(Node* node) {
-        if (node) {
-            node->height = 1 + max(heightOf(node->left), heightOf(node->right));
+    newNode->height = node->height;
+    newNode->left = copyNode(node->left);
+    newNode->right = copyNode(node->right);
+
+    return newNode;
+}
+
+    Node* root=nullptr;
+    static int height(Node* node){
+        return node?node->height:0;
+    }
+    static int BalanceFactor(Node* node){
+        return node?height(node->left)-height(node->right):0;
+    }
+    static void updateHeight(Node* node){
+        if(node){
+            node->height=1+max(height(node->left), height(node->right));
         }
     }
 
-    static Node* rotateRight(Node* y) {
-        Node* x = y->left;
-        Node* t2 = x->right;
+    //AVL Rotations
+    static Node* rotateRight(Node* y){
+        Node* x=y->left;
+        Node* t2=x->right;
 
-        x->right = y;
-        y->left = t2;
+        x->right=y;
+        y->left=t2;
 
         updateHeight(y);
         updateHeight(x);
         return x;
     }
 
-    static Node* rotateLeft(Node* x) {
-        Node* y = x->right;
-        Node* t2 = y->left;
+    static Node* rotateLeft(Node* x){
+        Node* y=x->right;
+        Node* t2=y->left;
 
-        y->left = x;
-        x->right = t2;
-
+        y->left=x;
+        x->right=t2;
         updateHeight(x);
         updateHeight(y);
         return y;
     }
-
-    static Node* rebalance(Node* node) {
-        if (!node) return nullptr;
+    
+    //AVL balance
+    static Node* rebalance(Node* node){
+        if(!node)return nullptr;
 
         updateHeight(node);
-        int bf = balanceOf(node);
+        int bf=BalanceFactor(node);
 
-        // Left-heavy: LL (child BF >= 0) or LR (child BF < 0)
-        if (bf > 1) {
-            if (balanceOf(node->left) < 0) {
-                node->left = rotateLeft(node->left);
+        if(bf>1){
+            if(BalanceFactor(node->left)<0){
+                node->left=rotateLeft(node->left);
             }
             return rotateRight(node);
         }
 
-        // Right-heavy: RR (child BF <= 0) or RL (child BF > 0)
-        if (bf < -1) {
-            if (balanceOf(node->right) > 0) {
-                node->right = rotateRight(node->right);
+        if(bf<-1){
+            if(BalanceFactor(node->right)>0){
+                node->right=rotateRight(node->right);
             }
             return rotateLeft(node);
         }
-
         return node;
     }
 
-    static Node* insertNode(Node* node, int key, bool& inserted) {
-        if (!node) {
-            inserted = true;
+    //basic bst insert with rebalance
+    static Node* insertNode(Node* node, int key, bool& inserted){
+        if(!node){
+            inserted=true;
             return new Node(key);
         }
-
-        if (key < node->key) {
-            node->left = insertNode(node->left, key, inserted);
-        } else if (key > node->key) {
-            node->right = insertNode(node->right, key, inserted);
-        } else {
-            inserted = false;
+        if(key<node->key){
+            node->left=insertNode(node->left, key, inserted);
+        }else if(key>node->key){
+            node->right=insertNode(node->right, key, inserted);
+        }else{
+            inserted=false;
             return node;
         }
-
         return rebalance(node);
     }
-
-    static Node* minNode(Node* node) {
-        Node* current = node;
-        while (current && current->left) current = current->left;
+    static Node* minNode(Node* node){
+        Node* current=node;
+        while(current && current->left){
+            current=current->left;
+        }
         return current;
     }
 
-    static Node* eraseNode(Node* node, int key, bool& erased) {
-        if (!node) return nullptr;
-
-        if (key < node->key) {
-            node->left = eraseNode(node->left, key, erased);
-        } else if (key > node->key) {
-            node->right = eraseNode(node->right, key, erased);
-        } else {
-            erased = true;
-
-            if (!node->left || !node->right) {
-                Node* child = node->left ? node->left : node->right;
+    //basic bst delete with rebalance
+    static Node* deleteNode(Node* node, int key, bool& deleted){
+        if(!node)return nullptr;
+        if(key<node->key){
+            node->left=deleteNode(node->left, key, deleted);
+        }else if(key>node->key){
+            node->right=deleteNode(node->right, key, deleted);
+        }else{
+            deleted=true;
+            if(!node->left || !node->right){
+                Node* child=node->left?node->left:node->right;
                 delete node;
                 return child;
             }
-
-            // Two children: replace with in-order successor, then physically remove it.
-            Node* successor = minNode(node->right);
-            node->key = successor->key;
-            bool dummy = false;
-            node->right = eraseNode(node->right, successor->key, dummy);
+            Node*succ=minNode(node->right);
+            node->key=succ->key;
+            bool temp=false;
+            node->right=deleteNode(node->right, succ->key, temp);
         }
-
-        return rebalance(node);
+        return  rebalance(node);
     }
 
-    static bool findNode(Node* node, int key) {
-        while (node) {
-            if (key < node->key) {
-                node = node->left;
-            } else if (key > node->key) {
-                node = node->right;
-            } else {
+    //basic bst find
+    static bool findNode(Node* node, int key){
+        while(node){
+            if(key<node->key){
+                node=node->left;
+            }else if(key>node->key){
+                node=node->right;
+            }else{
                 return true;
             }
         }
         return false;
     }
-
-    static void inorder(Node* node, vector<int>& out) {
-        if (!node) return;
+    //basic bst inorder
+    static void inorder(Node* node, vector<int> &out){
+        if(!node)return;
         inorder(node->left, out);
         out.push_back(node->key);
         inorder(node->right, out);
     }
-
-    static string serializeNode(Node* node) {
-        if (!node) return "";
-
-        if (!node->left && !node->right) {
-            return to_string(node->key);
+    
+    static string toString(Node* node){
+        if(!node)return "";
+        string result=to_string(node->key);
+        if(node->left==nullptr && node->right==nullptr){
+            return result;
         }
+        result+="(";
+        result+=toString(node->left);
+        result+=",";
+        result+=toString(node->right);
+        result+=")";
 
-        return to_string(node->key) + "(" + serializeNode(node->left) + "," +
-               serializeNode(node->right) + ")";
+        return result;
     }
-
-    static void destroy(Node* node) {
-        if (!node) return;
+    //destroys the entire subtree
+    static void destroy(Node* node){
+        if(!node)return;
         destroy(node->left);
         destroy(node->right);
         delete node;
     }
-
-public:
-    AVLTree() = default;
-    AVLTree(const AVLTree&) = delete;
-    AVLTree& operator=(const AVLTree&) = delete;
-
-    ~AVLTree() {
+    public:
+    AVLTree(){
+        //default
+    }
+    AVLTree(const AVLTree& other) {
+    root = copyNode(other.root);
+}
+AVLTree& operator=(const AVLTree& other) {
+    if (this != &other) {
         destroy(root);
+        root = copyNode(other.root);
     }
-
-    bool insert(int key) {
-        bool inserted = false;
-        root = insertNode(root, key, inserted);
-        return inserted;
-    }
-
-    bool erase(int key) {
-        bool erased = false;
-        root = eraseNode(root, key, erased);
-        return erased;
-    }
-
-    bool find(int key) const {
-        return findNode(root, key);
-    }
-
-    vector<int> traverse() const {
-        vector<int> result;
-        inorder(root, result);
-        return result;
-    }
-
-    string serialize() const {
-        return serializeNode(root);
-    }
-};
-
-struct TimingStat {
-    uint64_t count = 0;
-    uint64_t totalNs = 0;
-
-    void add(uint64_t ns) {
-        ++count;
-        totalNs += ns;
-    }
-};
-
-static void printTimingRow(const string& name, const TimingStat& stat) {
-    cout << name << ',' << stat.count << ',' << stat.totalNs << ',';
-    if (stat.count == 0) {
-        cout << "N/A\n";
-    } else {
-        cout << (stat.totalNs / stat.count) << '\n';
-    }
+    return *this;
 }
 
-static void writeVectorLine(ofstream& out, const vector<int>& values) {
-    for (size_t i = 0; i < values.size(); ++i) {
-        if (i) out << ' ';
-        out << values[i];
-    }
-    out << '\n';
+~AVLTree(){
+    destroy(root);
+}
+bool insert(int key){
+    bool inserted=false;
+    root=insertNode(root, key, inserted);
+    return inserted;
+}
+bool erase(int key){
+    bool erased=false;
+    root=deleteNode(root, key, erased);
+    return erased;
+}
+bool find(int key)const{
+   return findNode(root, key);
 }
 
-int main(int argc, char* argv[]) {
-    if (argc != 3) {
-        cerr << "Usage: " << argv[0] << " <input-file> <output-file>\n";
-        return 1;
+vector<int> traverse() const{
+ vector<int> result;
+    inorder(root, result);
+    return result;
+}
+string output() const{
+    return toString(root);
+}
+};
+
+
+
+
+//Time er habijabi
+long long getTime(){
+    return chrono::duration_cast<chrono::nanoseconds>(
+        chrono::steady_clock::now().time_since_epoch()
+    ).count();
+}
+
+struct TimeInfo{
+    long long count=0;
+    long long totalTime=0;
+    void add(long long time){
+        count++;
+        totalTime+=time;
     }
-
-    ifstream input(argv[1]);
-    if (!input) {
-        cerr << "Error: cannot open input file.\n";
-        return 1;
+};
+void printTime(string operation, TimeInfo info){
+    cout<<operation<<",";
+    cout<<info.count<<",";
+    cout<<info.totalTime<<",";
+    if(info.count==0){
+        cout<<"N/A"<<endl;
+    }else{
+        cout<<info.totalTime/info.count<<endl;
     }
-
-    ofstream output(argv[2]);
-    if (!output) {
-        cerr << "Error: cannot open output file.\n";
-        return 1;
+}
+void printVector(ofstream& output, vector<int>& values){
+    for(int i=0; i<values.size(); i++){
+        if(i>0){
+            output<<" ";
+        }
+        output<<values[i];
     }
+    output<<endl;
+}
 
-    AVLTree tree;
-    TimingStat insertStat, deleteStat, findStat, traverseStat;
+int main(int argc, char* argv[]){
+if(argc!=3){
+    return 1;
+}
 
-    string line;
-    while (getline(input, line)) {
-        if (line.empty()) continue;
+ifstream input(argv[1]);
 
-        istringstream iss(line);
-        char command;
-        iss >> command;
+if(!input){
+    return 1;
+}
 
-        if (command == 'I') {
-            int x;
-            iss >> x;
+ofstream output(argv[2]);
 
-            const auto start = chrono::steady_clock::now();
-            bool inserted = tree.insert(x);
-            const auto stop = chrono::steady_clock::now();
-            insertStat.add(chrono::duration_cast<chrono::nanoseconds>(stop - start).count());
+if(!output){
+    return 1;
+}
 
-            if (inserted) {
-                output << tree.serialize() << '\n';
-            } else {
-                output << "duplicate\n";
-            }
-        } else if (command == 'D') {
-            int x;
-            iss >> x;
+AVLTree gach;
 
-            const auto start = chrono::steady_clock::now();
-            bool erased = tree.erase(x);
-            const auto stop = chrono::steady_clock::now();
-            deleteStat.add(chrono::duration_cast<chrono::nanoseconds>(stop - start).count());
+TimeInfo insertTime;
+TimeInfo deleteTime;
+TimeInfo findTime;
+TimeInfo traverseTime;
 
-            if (erased) {
-                output << tree.serialize() << '\n';
-            } else {
-                output << "not found\n";
-            }
-        } else if (command == 'F') {
-            int x;
-            iss >> x;
+string line;
 
-            const auto start = chrono::steady_clock::now();
-            bool found = tree.find(x);
-            const auto stop = chrono::steady_clock::now();
-            findStat.add(chrono::duration_cast<chrono::nanoseconds>(stop - start).count());
+while(getline(input, line)){
+    if(line.empty()){
+        continue;
+    }
+    istringstream inputss(line);
+    char command;
+    inputss>>command;
 
-            output << (found ? "found" : "not found") << '\n';
-        } else if (command == 'T') {
-            const auto start = chrono::steady_clock::now();
-            vector<int> values = tree.traverse();
-            const auto stop = chrono::steady_clock::now();
-            traverseStat.add(chrono::duration_cast<chrono::nanoseconds>(stop - start).count());
-
-            writeVectorLine(output, values);
+    if(command=='I'){
+        int x;
+        inputss>>x;
+        long long start=getTime();
+        bool inserted=gach.insert(x);
+        long long finish=getTime();
+        insertTime.add(finish-start);
+        if(inserted){
+            output<<gach.output()<<endl;
+        }else{
+            output<<"duplicate"<<endl;
         }
     }
 
-    // Timing summary goes to standard output, not the operation-output file.
-    cout << "operation,count,total_ns,average_ns\n";
-    printTimingRow("insert", insertStat);
-    printTimingRow("delete", deleteStat);
-    printTimingRow("find", findStat);
-    printTimingRow("traverse", traverseStat);
+    else if(command=='D'){
+        int x;
+        inputss>>x;
+        long long start=getTime();
+        bool deleted=gach.erase(x);
+        long long finish=getTime();
+        deleteTime.add(finish-start);
+        if(deleted){
+            output<<gach.output()<<endl;
+        }else{
+            output<<"not found"<<endl;
+        }
+    }
 
-    return 0;
+    else if(command=='F'){
+        int x;
+        inputss>>x;
+        long long start=getTime();
+        bool found=gach.find(x);
+        long long finish=getTime();
+        findTime.add(finish-start);
+        if(found){
+            output<<"found"<<endl;
+        }else{
+            output<<"not found"<<endl;
+        }
+    }
+
+    else if(command=='T'){
+        long long start=getTime();
+        vector<int> values=gach.traverse();
+        long long finish=getTime();
+        traverseTime.add(finish-start);
+        printVector(output,values);
+    }
+}
+
+cout<<"operation,count,total_ns,average_ns"<<endl;
+
+printTime("insert", insertTime);
+printTime("delete", deleteTime);
+printTime("find",findTime);
+printTime("traverse",traverseTime);
+
+return 0;
 }
