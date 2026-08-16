@@ -228,7 +228,7 @@ string output() const{
 
 
 
-//Time er habijabi
+//Time er stuffs
 long long getTime(){
     return chrono::duration_cast<chrono::nanoseconds>(
         chrono::steady_clock::now().time_since_epoch()
