@@ -254,7 +254,7 @@ void printTime(string operation, TimeInfo info){
     }
 }
 void printVector(ofstream& output, vector<int>& values){
-    for(int i=0; i<values.size(); i++){
+    for(size_t i=0; i<values.size(); i++){
         if(i>0){
             output<<" ";
         }
