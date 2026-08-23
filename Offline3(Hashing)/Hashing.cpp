@@ -1,0 +1,281 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+enum class Method { CHAINING, DOUBLE_HASHING, CUSTOM_PROBING };
+
+template<class Key, class Value>
+class HashTable {
+    struct Entry { Key key; Value value; bool deleted = false; };
+
+    Method method;
+    int hashChoice;
+    size_t initialSize, tableSize, elementCount = 0;
+    double maxLoad, minLoad;
+    vector<list<pair<Key, Value>>> chains;
+    vector<optional<Entry>> slots;
+    long long collisions = 0;
+    size_t insertionsSinceExpansion = 0, deletionsSinceCompaction = 0;
+    bool hasExpanded = false, hasCompacted = false;
+
+    static bool isPrime(size_t x) {
+        if (x < 2) return false;
+        if (x % 2 == 0) return x == 2;
+        for (size_t d = 3; d <= x / d; d += 2)
+            if (x % d == 0) return false;
+        return true;
+    }
+    static size_t nextPrime(size_t x) {
+        while (!isPrime(x)) ++x;
+        return x;
+    }
+    static size_t previousPrime(size_t x) {
+        while (x > 2 && !isPrime(x)) --x;
+        return x;
+    }
+
+    // Two standard string hashes: polynomial rolling and FNV-1a.
+    static uint64_t hash1Raw(const Key& key) {
+        string s = key;
+        uint64_t h = 0;
+        for (unsigned char c : s) h = h * 131ULL + c;
+        return h;
+    }
+    static uint64_t hash2Raw(const Key& key) {
+        string s = key;
+        uint64_t h = 1469598103934665603ULL;
+        for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
+        return h;
+    }
+    uint64_t primaryRaw(const Key& key) const {
+        return hashChoice == 1 ? hash1Raw(key) : hash2Raw(key);
+    }
+    size_t primary(const Key& key) const { return primaryRaw(key) % tableSize; }
+    size_t auxiliary(const Key& key) const {
+        // tableSize is prime, so this step is coprime with tableSize.
+        return 1 + hash2Raw(key) % (tableSize - 1);
+    }
+    size_t probeIndex(const Key& key, size_t i) const {
+        uint64_t h = primary(key), step = auxiliary(key);
+        if (method == Method::DOUBLE_HASHING)
+            return (h + i * step) % tableSize;
+        constexpr uint64_t C1 = 1, C2 = 1;
+        return (h + C1 * i * step + C2 * i * i) % tableSize;
+    }
+
+    bool insertWithoutResize(const Key& key, const Value& value, bool countCollision) {
+        if (method == Method::CHAINING) {
+            size_t p = primary(key);
+            for (auto& kv : chains[p]) {
+                if (kv.first == key) { kv.second = value; return false; }
+            }
+            if (countCollision && !chains[p].empty()) ++collisions;
+            chains[p].push_back({key, value});
+            ++elementCount;
+            return true;
+        }
+
+        optional<size_t> firstDeleted;
+        for (size_t i = 0; i < tableSize; ++i) {
+            size_t p = probeIndex(key, i);
+            if (!slots[p].has_value()) {
+                size_t target = firstDeleted.value_or(p);
+                slots[target] = Entry{key, value, false};
+                ++elementCount;
+                return true;
+            }
+            if (slots[p]->deleted) {
+                if (!firstDeleted) firstDeleted = p;
+            } else if (slots[p]->key == key) {
+                slots[p]->value = value;
+                return false;
+            } else if (countCollision) {
+                ++collisions;
+            }
+        }
+        if (firstDeleted) {
+            slots[*firstDeleted] = Entry{key, value, false};
+            ++elementCount;
+            return true;
+        }
+        return false; // A custom quadratic probe sequence may not visit every slot.
+    }
+
+    vector<pair<Key, Value>> allItems() const {
+        vector<pair<Key, Value>> items;
+        items.reserve(elementCount);
+        if (method == Method::CHAINING) {
+            for (const auto& bucket : chains)
+                for (const auto& kv : bucket) items.push_back(kv);
+        } else {
+            for (const auto& e : slots)
+                if (e && !e->deleted) items.push_back({e->key, e->value});
+        }
+        return items;
+    }
+
+    void rehash(size_t newSize) {
+        auto items = allItems();
+        tableSize = nextPrime(max(initialSize, newSize));
+        chains.clear(); slots.clear();
+        if (method == Method::CHAINING) chains.resize(tableSize);
+        else slots.resize(tableSize);
+        elementCount = 0;
+        for (const auto& [k, v] : items) insertWithoutResize(k, v, false);
+    }
+
+    void considerExpansion() {
+        if ((double)elementCount / tableSize <= maxLoad) return;
+        // Before the first expansion there is no previous expansion to wait for.
+        if (hasExpanded && insertionsSinceExpansion < elementCount / 2) return;
+        rehash(nextPrime(2 * tableSize + 1));
+        hasExpanded = true;
+        insertionsSinceExpansion = 0;
+    }
+    void considerCompaction() {
+        if (tableSize == initialSize || (double)elementCount / tableSize >= minLoad) return;
+        // Before the first compaction there is no previous compaction to wait for.
+        if (hasCompacted && deletionsSinceCompaction < elementCount / 2) return;
+        size_t candidate = previousPrime(tableSize / 2 - 1);
+        rehash(max(initialSize, candidate));
+        hasCompacted = true;
+        deletionsSinceCompaction = 0;
+    }
+
+public:
+    HashTable(Method m, int whichHash, size_t startSize = 13,
+              double upper = 0.50, double lower = 0.25)
+        : method(m), hashChoice(whichHash), initialSize(nextPrime(startSize)),
+          tableSize(initialSize), maxLoad(upper), minLoad(lower) {
+        if (method == Method::CHAINING) chains.resize(tableSize);
+        else slots.resize(tableSize);
+    }
+
+    bool insert(const Key& key, const Value& value) {
+        // Update an existing key without changing size/counters.
+        long long ignored;
+        if (search(key, ignored) != nullptr) {
+            insertWithoutResize(key, value, false);
+            return false;
+        }
+        considerExpansion();
+        while (!insertWithoutResize(key, value, true)) {
+            rehash(nextPrime(2 * tableSize + 1));
+            hasExpanded = true;
+            insertionsSinceExpansion = 0;
+        }
+        ++insertionsSinceExpansion;
+        // Insertion itself may push the load factor over the threshold.
+        considerExpansion();
+        return true;
+    }
+
+    Value* search(const Key& key, long long& hits) {
+        hits = 0;
+        if (method == Method::CHAINING) {
+            size_t p = primary(key);
+            for (auto& kv : chains[p]) {
+                ++hits;
+                if (kv.first == key) return &kv.second;
+            }
+            return nullptr;
+        }
+        for (size_t i = 0; i < tableSize; ++i) {
+            size_t p = probeIndex(key, i);
+            ++hits;
+            if (!slots[p]) return nullptr;
+            if (!slots[p]->deleted && slots[p]->key == key) return &slots[p]->value;
+        }
+        return nullptr;
+    }
+
+    bool erase(const Key& key) {
+        if (method == Method::CHAINING) {
+            size_t p = primary(key);
+            for (auto it = chains[p].begin(); it != chains[p].end(); ++it) {
+                if (it->first == key) {
+                    chains[p].erase(it); --elementCount; ++deletionsSinceCompaction;
+                    considerCompaction(); return true;
+                }
+            }
+            return false;
+        }
+        for (size_t i = 0; i < tableSize; ++i) {
+            size_t p = probeIndex(key, i);
+            if (!slots[p]) return false;
+            if (!slots[p]->deleted && slots[p]->key == key) {
+                slots[p]->deleted = true; --elementCount; ++deletionsSinceCompaction;
+                considerCompaction(); return true;
+            }
+        }
+        return false;
+    }
+
+    long long collisionCount() const { return collisions; }
+    size_t size() const { return elementCount; }
+    size_t capacity() const { return tableSize; }
+};
+
+vector<string> generateUniqueWords(size_t count, int length, mt19937& rng) {
+    const string alphabet = "abcdefghijklmnopqrstuvwxyz";
+    uniform_int_distribution<int> pick(0, 25);
+    unordered_set<string> used;
+    vector<string> words;
+    words.reserve(count);
+    while (words.size() < count) {
+        string s(length, 'a');
+        for (char& c : s) c = alphabet[pick(rng)];
+        if (used.insert(s).second) words.push_back(s);
+    }
+    return words;
+}
+
+string methodName(Method m) {
+    if (m == Method::CHAINING) return "Chaining";
+    if (m == Method::DOUBLE_HASHING) return "Double Hashing";
+    return "Custom Probing";
+}
+
+int main() {
+    constexpr size_t WORD_COUNT = 10000;
+    constexpr int WORD_LENGTH = 10;
+    constexpr size_t SEARCH_COUNT = 1000;
+    constexpr size_t INITIAL_SIZE = 13;
+    constexpr double MAX_LOAD = 0.50, MIN_LOAD = 0.25;
+
+    mt19937 rng(42); // fixed seed makes the report reproducible
+    vector<string> words = generateUniqueWords(WORD_COUNT, WORD_LENGTH, rng);
+    vector<size_t> sample(WORD_COUNT);
+    iota(sample.begin(), sample.end(), 0);
+    shuffle(sample.begin(), sample.end(), rng);
+    sample.resize(SEARCH_COUNT);
+
+    vector<Method> methods = {Method::CHAINING, Method::DOUBLE_HASHING,
+                              Method::CUSTOM_PROBING};
+    cout << left << setw(18) << "Method" << setw(8) << "Hash"
+         << setw(18) << "Collisions" << "Average Hits\n";
+    cout << string(58, '-') << '\n';
+
+    for (Method method : methods) {
+        for (int hashNo = 1; hashNo <= 2; ++hashNo) {
+            HashTable<string, int> table(method, hashNo, INITIAL_SIZE,
+                                         MAX_LOAD, MIN_LOAD);
+            for (size_t i = 0; i < words.size(); ++i)
+                table.insert(words[i], static_cast<int>(i + 1));
+
+            long long totalHits = 0;
+            for (size_t index : sample) {
+                long long hits;
+                if (!table.search(words[index], hits)) {
+                    cerr << "Internal error: key not found\n";
+                    return 1;
+                }
+                totalHits += hits;
+            }
+            cout << left << setw(18) << methodName(method)
+                 << setw(8) << ("Hash" + to_string(hashNo))
+                 << setw(18) << table.collisionCount()
+                 << fixed << setprecision(3)
+                 << (double)totalHits / SEARCH_COUNT << '\n';
+        }
+    }
+}
