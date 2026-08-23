@@ -1,0 +1,20 @@
+CSE 208 - Hash Table Performance Report
+Student ID-2405118
+Word length: 10
+Number of unique words inserted for evaluation: 10000
+Number of randomly selected words searched: 1000
+
+
+Enter word length for demonstration: 10
+Generated and inserted 10 unique words of length 10.
+
+                    Hash1                                 Hash2
+Method              Number of Collisions  Average Hits    Number of Collisions  Average Hits
+------------------------------------------------------------------------------------------------
+Chaining            3008                  1.120           2925                  1.148
+Double Hashing      5771                  1.158           5709                  1.187
+Custom Probing      5798                  1.172           5689                  1.180
+
+Hash quality verification:
+Hash1: 8707 unique hash values out of 10000 keys (87.07%) - PASS
+Hash2: 8637 unique hash values out of 10000 keys (86.37%) - PASS
