@@ -1,9 +1,20 @@
-#include <bits/stdc++.h>
+#include <algorithm>
+#include <iomanip>
+#include <iostream>
+#include <list>
+#include <numeric>
+#include <optional>
+#include <random>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 using namespace std;
 
 const int CHAINING = 1;
 const int DOUBLE_HASHING = 2;
 const int CUSTOM_PROBING = 3;
+const unsigned long long UNIVERSAL_PRIME = 1000000007ULL;
 
 template<class Key, class Value>
 class HashTable {
@@ -13,6 +24,7 @@ class HashTable {
     int hashChoice;
     int initialSize, tableSize, elementCount = 0;
     double maxLoad, minLoad;
+    unsigned long long universalA, universalB;
     vector<list<pair<Key, Value>>> chains;
     vector<optional<Entry>> slots;
     long long collisions = 0;
@@ -35,26 +47,40 @@ class HashTable {
         return x;
     }
 
-    // Two standard string hashes: polynomial rolling and FNV-1a.
-    static unsigned long long hash1Raw(const Key& key) {
+    // Interpret a string as a radix-128 number without storing the full number.
+    static unsigned long long stringToNumberModulo(const Key& key,
+                                                    unsigned long long modulus) {
         string s = key;
-        unsigned long long h = 0;
-        for (unsigned char c : s) h = h * 131ULL + c;
-        return h;
+        unsigned long long number = 0;
+
+        for (unsigned char c : s) {
+            number = (number * 128ULL + c) % modulus;
+        }
+
+        return number;
     }
-    static unsigned long long hash2Raw(const Key& key) {
-        string s = key;
-        unsigned long long h = 1469598103934665603ULL;
-        for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
-        return h;
+
+    // Cormen, Section 11.3.1: h(k) = k mod m.
+    int divisionHash(const Key& key) const {
+        return (int)stringToNumberModulo(key, tableSize);
     }
-    unsigned long long primaryRaw(const Key& key) const {
-        return hashChoice == 1 ? hash1Raw(key) : hash2Raw(key);
+
+    // Cormen, Section 11.3.3: h(k) = ((a*k + b) mod p) mod m.
+    int universalHash(const Key& key) const {
+        unsigned long long k = stringToNumberModulo(key, UNIVERSAL_PRIME);
+        unsigned long long hashValue =
+            (universalA * k + universalB) % UNIVERSAL_PRIME;
+
+        return (int)(hashValue % tableSize);
     }
-    int primary(const Key& key) const { return primaryRaw(key) % tableSize; }
+
+    int primary(const Key& key) const {
+        return hashChoice == 1 ? divisionHash(key) : universalHash(key);
+    }
+
     int auxiliary(const Key& key) const {
         // tableSize is prime, so this step is coprime with tableSize.
-        return 1 + hash2Raw(key) % (tableSize - 1);
+        return 1 + (int)stringToNumberModulo(key, tableSize - 1);
     }
     int probeIndex(const Key& key, int i) const {
         unsigned long long h = primary(key), step = auxiliary(key);
@@ -145,9 +171,12 @@ class HashTable {
 
 public:
     HashTable(int m, int whichHash, int startSize = 13,
-              double upper = 0.50, double lower = 0.25)
+              double upper = 0.50, double lower = 0.25,
+              unsigned long long a = 151ULL,
+              unsigned long long b = 263ULL)
         : method(m), hashChoice(whichHash), initialSize(nextPrime(startSize)),
-          tableSize(initialSize), maxLoad(upper), minLoad(lower) {
+          tableSize(initialSize), maxLoad(upper), minLoad(lower),
+          universalA(a), universalB(b) {
         if (method == CHAINING) chains.resize(tableSize);
         else slots.resize(tableSize);
     }
@@ -251,6 +280,12 @@ int main() {
     shuffle(sample.begin(), sample.end(), rng);
     sample.resize(SEARCH_COUNT);
 
+    // Select one universal hash function randomly and use it in every comparison.
+    uniform_int_distribution<unsigned long long> chooseA(1, UNIVERSAL_PRIME - 1);
+    uniform_int_distribution<unsigned long long> chooseB(0, UNIVERSAL_PRIME - 1);
+    unsigned long long universalA = chooseA(rng);
+    unsigned long long universalB = chooseB(rng);
+
     vector<int> methods = {CHAINING, DOUBLE_HASHING, CUSTOM_PROBING};
     cout << left << setw(18) << "Method" << setw(8) << "Hash"
          << setw(18) << "Collisions" << "Average Hits\n";
@@ -259,7 +294,8 @@ int main() {
     for (int method : methods) {
         for (int hashNo = 1; hashNo <= 2; ++hashNo) {
             HashTable<string, int> table(method, hashNo, INITIAL_SIZE,
-                                         MAX_LOAD, MIN_LOAD);
+                                         MAX_LOAD, MIN_LOAD,
+                                         universalA, universalB);
             for (int i = 0; i < (int)words.size(); ++i)
                 table.insert(words[i], static_cast<int>(i + 1));
 
