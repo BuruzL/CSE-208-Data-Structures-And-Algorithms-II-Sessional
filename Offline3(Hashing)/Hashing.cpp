@@ -1,70 +1,72 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-enum class Method { CHAINING, DOUBLE_HASHING, CUSTOM_PROBING };
+const int CHAINING = 1;
+const int DOUBLE_HASHING = 2;
+const int CUSTOM_PROBING = 3;
 
 template<class Key, class Value>
 class HashTable {
     struct Entry { Key key; Value value; bool deleted = false; };
 
-    Method method;
+    int method;
     int hashChoice;
-    size_t initialSize, tableSize, elementCount = 0;
+    int initialSize, tableSize, elementCount = 0;
     double maxLoad, minLoad;
     vector<list<pair<Key, Value>>> chains;
     vector<optional<Entry>> slots;
     long long collisions = 0;
-    size_t insertionsSinceExpansion = 0, deletionsSinceCompaction = 0;
+    int insertionsSinceExpansion = 0, deletionsSinceCompaction = 0;
     bool hasExpanded = false, hasCompacted = false;
 
-    static bool isPrime(size_t x) {
+    static bool isPrime(int x) {
         if (x < 2) return false;
         if (x % 2 == 0) return x == 2;
-        for (size_t d = 3; d <= x / d; d += 2)
+        for (int d = 3; d <= x / d; d += 2)
             if (x % d == 0) return false;
         return true;
     }
-    static size_t nextPrime(size_t x) {
+    static int nextPrime(int x) {
         while (!isPrime(x)) ++x;
         return x;
     }
-    static size_t previousPrime(size_t x) {
+    static int previousPrime(int x) {
         while (x > 2 && !isPrime(x)) --x;
         return x;
     }
 
     // Two standard string hashes: polynomial rolling and FNV-1a.
-    static uint64_t hash1Raw(const Key& key) {
+    static unsigned long long hash1Raw(const Key& key) {
         string s = key;
-        uint64_t h = 0;
+        unsigned long long h = 0;
         for (unsigned char c : s) h = h * 131ULL + c;
         return h;
     }
-    static uint64_t hash2Raw(const Key& key) {
+    static unsigned long long hash2Raw(const Key& key) {
         string s = key;
-        uint64_t h = 1469598103934665603ULL;
+        unsigned long long h = 1469598103934665603ULL;
         for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
         return h;
     }
-    uint64_t primaryRaw(const Key& key) const {
+    unsigned long long primaryRaw(const Key& key) const {
         return hashChoice == 1 ? hash1Raw(key) : hash2Raw(key);
     }
-    size_t primary(const Key& key) const { return primaryRaw(key) % tableSize; }
-    size_t auxiliary(const Key& key) const {
+    int primary(const Key& key) const { return primaryRaw(key) % tableSize; }
+    int auxiliary(const Key& key) const {
         // tableSize is prime, so this step is coprime with tableSize.
         return 1 + hash2Raw(key) % (tableSize - 1);
     }
-    size_t probeIndex(const Key& key, size_t i) const {
-        uint64_t h = primary(key), step = auxiliary(key);
-        if (method == Method::DOUBLE_HASHING)
+    int probeIndex(const Key& key, int i) const {
+        unsigned long long h = primary(key), step = auxiliary(key);
+        if (method == DOUBLE_HASHING)
             return (h + i * step) % tableSize;
-        constexpr uint64_t C1 = 1, C2 = 1;
+        constexpr unsigned long long C1 = 1, C2 = 1;
         return (h + C1 * i * step + C2 * i * i) % tableSize;
     }
 
     bool insertWithoutResize(const Key& key, const Value& value, bool countCollision) {
-        if (method == Method::CHAINING) {
-            size_t p = primary(key);
+        if (method == CHAINING) {
+            int p = primary(key);
             for (auto& kv : chains[p]) {
                 if (kv.first == key) { kv.second = value; return false; }
             }
@@ -74,11 +76,11 @@ class HashTable {
             return true;
         }
 
-        optional<size_t> firstDeleted;
-        for (size_t i = 0; i < tableSize; ++i) {
-            size_t p = probeIndex(key, i);
+        optional<int> firstDeleted;
+        for (int i = 0; i < tableSize; ++i) {
+            int p = probeIndex(key, i);
             if (!slots[p].has_value()) {
-                size_t target = firstDeleted.value_or(p);
+                int target = firstDeleted.value_or(p);
                 slots[target] = Entry{key, value, false};
                 ++elementCount;
                 return true;
@@ -103,7 +105,7 @@ class HashTable {
     vector<pair<Key, Value>> allItems() const {
         vector<pair<Key, Value>> items;
         items.reserve(elementCount);
-        if (method == Method::CHAINING) {
+        if (method == CHAINING) {
             for (const auto& bucket : chains)
                 for (const auto& kv : bucket) items.push_back(kv);
         } else {
@@ -113,11 +115,11 @@ class HashTable {
         return items;
     }
 
-    void rehash(size_t newSize) {
+    void rehash(int newSize) {
         auto items = allItems();
         tableSize = nextPrime(max(initialSize, newSize));
         chains.clear(); slots.clear();
-        if (method == Method::CHAINING) chains.resize(tableSize);
+        if (method == CHAINING) chains.resize(tableSize);
         else slots.resize(tableSize);
         elementCount = 0;
         for (const auto& [k, v] : items) insertWithoutResize(k, v, false);
@@ -135,18 +137,18 @@ class HashTable {
         if (tableSize == initialSize || (double)elementCount / tableSize >= minLoad) return;
         // Before the first compaction there is no previous compaction to wait for.
         if (hasCompacted && deletionsSinceCompaction < elementCount / 2) return;
-        size_t candidate = previousPrime(tableSize / 2 - 1);
+        int candidate = previousPrime(tableSize / 2 - 1);
         rehash(max(initialSize, candidate));
         hasCompacted = true;
         deletionsSinceCompaction = 0;
     }
 
 public:
-    HashTable(Method m, int whichHash, size_t startSize = 13,
+    HashTable(int m, int whichHash, int startSize = 13,
               double upper = 0.50, double lower = 0.25)
         : method(m), hashChoice(whichHash), initialSize(nextPrime(startSize)),
           tableSize(initialSize), maxLoad(upper), minLoad(lower) {
-        if (method == Method::CHAINING) chains.resize(tableSize);
+        if (method == CHAINING) chains.resize(tableSize);
         else slots.resize(tableSize);
     }
 
@@ -171,16 +173,16 @@ public:
 
     Value* search(const Key& key, long long& hits) {
         hits = 0;
-        if (method == Method::CHAINING) {
-            size_t p = primary(key);
+        if (method == CHAINING) {
+            int p = primary(key);
             for (auto& kv : chains[p]) {
                 ++hits;
                 if (kv.first == key) return &kv.second;
             }
             return nullptr;
         }
-        for (size_t i = 0; i < tableSize; ++i) {
-            size_t p = probeIndex(key, i);
+        for (int i = 0; i < tableSize; ++i) {
+            int p = probeIndex(key, i);
             ++hits;
             if (!slots[p]) return nullptr;
             if (!slots[p]->deleted && slots[p]->key == key) return &slots[p]->value;
@@ -189,8 +191,8 @@ public:
     }
 
     bool erase(const Key& key) {
-        if (method == Method::CHAINING) {
-            size_t p = primary(key);
+        if (method == CHAINING) {
+            int p = primary(key);
             for (auto it = chains[p].begin(); it != chains[p].end(); ++it) {
                 if (it->first == key) {
                     chains[p].erase(it); --elementCount; ++deletionsSinceCompaction;
@@ -199,8 +201,8 @@ public:
             }
             return false;
         }
-        for (size_t i = 0; i < tableSize; ++i) {
-            size_t p = probeIndex(key, i);
+        for (int i = 0; i < tableSize; ++i) {
+            int p = probeIndex(key, i);
             if (!slots[p]) return false;
             if (!slots[p]->deleted && slots[p]->key == key) {
                 slots[p]->deleted = true; --elementCount; ++deletionsSinceCompaction;
@@ -211,17 +213,17 @@ public:
     }
 
     long long collisionCount() const { return collisions; }
-    size_t size() const { return elementCount; }
-    size_t capacity() const { return tableSize; }
+    int size() const { return elementCount; }
+    int capacity() const { return tableSize; }
 };
 
-vector<string> generateUniqueWords(size_t count, int length, mt19937& rng) {
+vector<string> generateUniqueWords(int count, int length, mt19937& rng) {
     const string alphabet = "abcdefghijklmnopqrstuvwxyz";
     uniform_int_distribution<int> pick(0, 25);
     unordered_set<string> used;
     vector<string> words;
     words.reserve(count);
-    while (words.size() < count) {
+    while ((int)words.size() < count) {
         string s(length, 'a');
         for (char& c : s) c = alphabet[pick(rng)];
         if (used.insert(s).second) words.push_back(s);
@@ -229,41 +231,40 @@ vector<string> generateUniqueWords(size_t count, int length, mt19937& rng) {
     return words;
 }
 
-string methodName(Method m) {
-    if (m == Method::CHAINING) return "Chaining";
-    if (m == Method::DOUBLE_HASHING) return "Double Hashing";
+string methodName(int m) {
+    if (m == CHAINING) return "Chaining";
+    if (m == DOUBLE_HASHING) return "Double Hashing";
     return "Custom Probing";
 }
 
 int main() {
-    constexpr size_t WORD_COUNT = 10000;
+    constexpr int WORD_COUNT = 10000;
     constexpr int WORD_LENGTH = 10;
-    constexpr size_t SEARCH_COUNT = 1000;
-    constexpr size_t INITIAL_SIZE = 13;
+    constexpr int SEARCH_COUNT = 1000;
+    constexpr int INITIAL_SIZE = 13;
     constexpr double MAX_LOAD = 0.50, MIN_LOAD = 0.25;
 
     mt19937 rng(42); // fixed seed makes the report reproducible
     vector<string> words = generateUniqueWords(WORD_COUNT, WORD_LENGTH, rng);
-    vector<size_t> sample(WORD_COUNT);
+    vector<int> sample(WORD_COUNT);
     iota(sample.begin(), sample.end(), 0);
     shuffle(sample.begin(), sample.end(), rng);
     sample.resize(SEARCH_COUNT);
 
-    vector<Method> methods = {Method::CHAINING, Method::DOUBLE_HASHING,
-                              Method::CUSTOM_PROBING};
+    vector<int> methods = {CHAINING, DOUBLE_HASHING, CUSTOM_PROBING};
     cout << left << setw(18) << "Method" << setw(8) << "Hash"
          << setw(18) << "Collisions" << "Average Hits\n";
     cout << string(58, '-') << '\n';
 
-    for (Method method : methods) {
+    for (int method : methods) {
         for (int hashNo = 1; hashNo <= 2; ++hashNo) {
             HashTable<string, int> table(method, hashNo, INITIAL_SIZE,
                                          MAX_LOAD, MIN_LOAD);
-            for (size_t i = 0; i < words.size(); ++i)
+            for (int i = 0; i < (int)words.size(); ++i)
                 table.insert(words[i], static_cast<int>(i + 1));
 
             long long totalHits = 0;
-            for (size_t index : sample) {
+            for (int index : sample) {
                 long long hits;
                 if (!table.search(words[index], hits)) {
                     cerr << "Internal error: key not found\n";
